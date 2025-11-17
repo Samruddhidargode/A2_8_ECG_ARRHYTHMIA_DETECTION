@@ -1,0 +1,362 @@
+"""
+Fast Flask API - Loads Pre-Trained Results Instantly
+No retraining needed!
+
+UPDATED VERSION - Fixed ECG generation to respect beat type selection
+"""
+from scipy.signal import find_peaks
+import sys
+sys.path.append('.')
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import numpy as np
+import json
+import joblib
+from pathlib import Path
+
+app = Flask(__name__)
+CORS(app)
+
+# Load pre-trained results on startup
+PRETRAINED_RESULTS = None
+TRAINED_MODELS = {}
+
+def load_pretrained_results():
+    """Load saved results from disk"""
+    global PRETRAINED_RESULTS
+    
+    results_file = Path('pretrained_results/model_results.json')
+    
+    if results_file.exists():
+        with open(results_file, 'r') as f:
+            PRETRAINED_RESULTS = json.load(f)
+        print("✅ Loaded pre-trained results")
+        return True
+    else:
+        print("⚠️  No pre-trained results found")
+        print("   Run: python save_results.py")
+        return False
+
+def load_trained_models():
+    """Load actual trained model files"""
+    global TRAINED_MODELS
+    
+    model_dirs = ['trained_models', 'real_data_models', 'comprehensive_models']
+    
+    for model_dir in model_dirs:
+        model_path = Path(model_dir)
+        if not model_path.exists():
+            continue
+        
+        # Load scaler and encoder
+        scaler_file = model_path / 'scaler.pkl'
+        encoder_file = model_path / 'label_encoder.pkl'
+        
+        if scaler_file.exists() and encoder_file.exists():
+            TRAINED_MODELS['scaler'] = joblib.load(scaler_file)
+            TRAINED_MODELS['label_encoder'] = joblib.load(encoder_file)
+            
+            # Load best model
+            metadata_file = model_path / 'metadata.pkl'
+            if metadata_file.exists():
+                metadata = joblib.load(metadata_file)
+                best_model_name = metadata.get('best_model_name', 'xgboost')
+                
+                model_file = model_path / f'{best_model_name}.pkl'
+                if model_file.exists():
+                    TRAINED_MODELS['best_model'] = joblib.load(model_file)
+                    TRAINED_MODELS['best_model_name'] = best_model_name
+                    print(f"✅ Loaded best model: {best_model_name}")
+                    return True
+    
+    print("⚠️  No trained models found")
+    return False
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check"""
+    return jsonify({
+        "status": "healthy",
+        "trained": PRETRAINED_RESULTS is not None,
+        "models_loaded": len(TRAINED_MODELS) > 0,
+        "message": "Fast API - Pre-trained results loaded"
+    })
+
+@app.route('/api/results', methods=['GET'])
+def get_results():
+    """Get pre-trained results instantly"""
+    if PRETRAINED_RESULTS is None:
+        return jsonify({
+            "status": "error",
+            "message": "No results available. Run: python save_results.py"
+        }), 404
+    
+    return jsonify({
+        "status": "success",
+        "results": PRETRAINED_RESULTS
+    })
+
+@app.route('/api/generate-sample', methods=['GET'])
+def generate_sample():
+    """Generate synthetic ECG signal - FIXED VERSION"""
+    try:
+        # ✨ NEW: Get the beat type parameter
+        beat_type = request.args.get('type', 'normal').upper()
+        
+        # Legacy parameters for backward compatibility
+        arrhythmias = request.args.get('arrhythmias', 'false').lower() == 'true'
+        ventricular = int(request.args.get('ventricular', 0))
+        supraventricular = int(request.args.get('supraventricular', 0))
+        
+        sampling_rate = 360
+        duration = 10
+        t = np.linspace(0, duration, sampling_rate * duration)
+        ecg = np.zeros_like(t)
+        
+        # Simple heartbeat generation
+        heart_rate = 75
+        beat_interval = 60 / heart_rate
+        beat_times = np.arange(0, duration, beat_interval)
+        
+        beat_types = []
+        
+        # ✨ NEW: Generate ALL beats of the selected type
+        if beat_type in ['NORMAL', 'N']:
+            print(f"🫀 Generating ALL NORMAL beats")
+            # Generate ALL normal beats
+            for i, beat_time in enumerate(beat_times):
+                beat_idx = int(beat_time * sampling_rate)
+                if beat_idx >= len(ecg) - 100:
+                    continue
+                
+                # Normal: narrow QRS (80ms), medium amplitude (1.0)
+                width = int(0.08 * sampling_rate)
+                start = max(0, beat_idx - width // 2)
+                end = min(len(ecg), beat_idx + width // 2)
+                ecg[start:end] += 1.0 * np.exp(-np.linspace(-1, 1, end - start)**2 * 12)
+                beat_types.append('N')
+        
+        elif beat_type in ['VENTRICULAR', 'V']:
+            print(f"🫀 Generating ALL VENTRICULAR beats")
+            # Generate ALL ventricular beats
+            for i, beat_time in enumerate(beat_times):
+                beat_idx = int(beat_time * sampling_rate)
+                if beat_idx >= len(ecg) - 100:
+                    continue
+                
+                # Ventricular: WIDE QRS (180ms), HIGH amplitude (2.5)
+                width = int(0.18 * sampling_rate)
+                start = max(0, beat_idx - width // 2)
+                end = min(len(ecg), beat_idx + width // 2)
+                ecg[start:end] += 2.5 * np.exp(-np.linspace(-1, 1, end - start)**2 * 3)
+                beat_types.append('V')
+        
+        elif beat_type in ['SUPRAVENTRICULAR', 'S']:
+            print(f"🫀 Generating ALL SUPRAVENTRICULAR beats")
+            # Generate ALL supraventricular beats
+            for i, beat_time in enumerate(beat_times):
+                beat_idx = int(beat_time * sampling_rate)
+                if beat_idx >= len(ecg) - 100:
+                    continue
+                
+                # Supraventricular: narrow QRS (70ms), LOW amplitude (0.5)
+                width = int(0.07 * sampling_rate)
+                start = max(0, beat_idx - width // 2)
+                end = min(len(ecg), beat_idx + width // 2)
+                ecg[start:end] += 0.5 * np.exp(-np.linspace(-1, 1, end - start)**2 * 15)
+                beat_types.append('S')
+        
+        else:
+            # LEGACY MODE: Mixed arrhythmias with specified counts
+            print(f"🫀 Generating MIXED beats (legacy mode)")
+            v_count = 0
+            s_count = 0
+            
+            for i, beat_time in enumerate(beat_times):
+                beat_idx = int(beat_time * sampling_rate)
+                if beat_idx >= len(ecg) - 100:
+                    continue
+                
+                # Determine beat type based on legacy parameters
+                if arrhythmias and v_count < ventricular and i % 3 == 0:
+                    # Ventricular
+                    width = int(0.18 * sampling_rate)
+                    start = max(0, beat_idx - width // 2)
+                    end = min(len(ecg), beat_idx + width // 2)
+                    ecg[start:end] += 2.5 * np.exp(-np.linspace(-1, 1, end - start)**2 * 3)
+                    beat_types.append('V')
+                    v_count += 1
+                elif arrhythmias and s_count < supraventricular and i % 4 == 0:
+                    # Supraventricular
+                    width = int(0.07 * sampling_rate)
+                    start = max(0, beat_idx - width // 2)
+                    end = min(len(ecg), beat_idx + width // 2)
+                    ecg[start:end] += 0.5 * np.exp(-np.linspace(-1, 1, end - start)**2 * 15)
+                    beat_types.append('S')
+                    s_count += 1
+                else:
+                    # Normal
+                    width = int(0.08 * sampling_rate)
+                    start = max(0, beat_idx - width // 2)
+                    end = min(len(ecg), beat_idx + width // 2)
+                    ecg[start:end] += 1.0 * np.exp(-np.linspace(-1, 1, end - start)**2 * 12)
+                    beat_types.append('N')
+        
+        # Add noise
+        ecg = ecg + 0.05 * np.random.randn(len(ecg))
+        
+        print(f"✅ Generated {len(beat_types)} beats of type: {beat_type}")
+        print(f"   N={beat_types.count('N')}, V={beat_types.count('V')}, S={beat_types.count('S')}")
+        
+        return jsonify({
+            "status": "success",
+            "signal": ecg.tolist(),
+            "sampling_rate": sampling_rate,
+            "duration": duration,
+            "beat_types": beat_types,
+            "total_beats": len(beat_types),
+            "normal": beat_types.count('N'),
+            "ventricular": beat_types.count('V'),
+            "supraventricular": beat_types.count('S'),
+            "expected_type": beat_type  # ✨ NEW: return expected type
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in generate_sample: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/process-ecg', methods=['POST'])
+def process_ecg():
+    """Process ECG signal with loaded model - REAL PREDICTIONS"""
+    try:
+        if 'best_model' not in TRAINED_MODELS:
+            return jsonify({
+                "status": "error",
+                "message": "No trained model available"
+            }), 400
+        
+        data = request.json
+        signal = np.array(data.get('signal', []))
+        sampling_rate = data.get('sampling_rate', 360)
+        
+        if len(signal) == 0:
+            return jsonify({"status": "error", "message": "No signal provided"}), 400
+        
+        # R-peak detection
+        from scipy.signal import find_peaks
+        
+        # Normalize signal
+        signal_normalized = (signal - np.mean(signal)) / (np.std(signal) + 1e-10)
+        
+        # Find peaks (R-peaks)
+        peaks, _ = find_peaks(signal_normalized, distance=int(0.6 * sampling_rate), height=0.3)
+        
+        num_beats = len(peaks)
+        
+        if num_beats == 0:
+            return jsonify({
+                "status": "error",
+                "message": "No heartbeats detected in signal"
+            }), 400
+        
+        # Calculate heart rate
+        if num_beats > 1:
+            rr_intervals = np.diff(peaks) / sampling_rate
+            heart_rate = 60.0 / np.mean(rr_intervals)
+        else:
+            heart_rate = 75.0
+        
+        # === REAL MODEL PREDICTION ===
+        print(f"🔍 Extracting features from {num_beats} beats...")
+        
+        # Import feature extraction
+        from simple_feature_extraction import segment_and_extract_features
+        
+        # Extract features from all beats
+        features_matrix = segment_and_extract_features(signal, peaks, sampling_rate)
+        
+        if len(features_matrix) == 0:
+            return jsonify({
+                "status": "error",
+                "message": "Feature extraction failed"
+            }), 400
+        
+        print(f"✅ Features extracted: {features_matrix.shape}")
+        
+        # Scale features using trained scaler
+        scaler = TRAINED_MODELS['scaler']
+        features_scaled = scaler.transform(features_matrix)
+        
+        # Predict using trained model
+        model = TRAINED_MODELS['best_model']
+        predictions_encoded = model.predict(features_scaled)
+        
+        # Decode predictions
+        label_encoder = TRAINED_MODELS['label_encoder']
+        predictions = label_encoder.inverse_transform(predictions_encoded)
+        
+        print(f"✅ Predictions: {predictions}")
+        
+        # Count predictions
+        pred_counts = {
+            'N': int(np.sum(predictions == 'N')),
+            'V': int(np.sum(predictions == 'V')),
+            'S': int(np.sum(predictions == 'S'))
+        }
+        
+        print(f"📊 Classification: N={pred_counts['N']}, V={pred_counts['V']}, S={pred_counts['S']}")
+        
+        return jsonify({
+            "status": "success",
+            "heart_rate": float(heart_rate),
+            "num_beats": num_beats,
+            "predictions": predictions.tolist(),
+            "prediction_counts": pred_counts,
+            "best_model_used": TRAINED_MODELS.get('best_model_name', 'xgboost'),
+            "method": "real_model_prediction"
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in process_ecg: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+if __name__ == '__main__':
+    print("\n" + "="*70)
+    print("⚡ FAST ARRHYTHMIA DETECTION API - UPDATED VERSION")
+    print("="*70)
+    
+    print("\n📥 Loading pre-trained results...")
+    has_results = load_pretrained_results()
+    
+    print("\n🤖 Loading trained models...")
+    has_models = load_trained_models()
+    
+    if not has_results:
+        print("\n⚠️  WARNING: No pre-trained results found!")
+        print("   Run: python save_results.py")
+    
+    if not has_models:
+        print("\n⚠️  WARNING: No trained models found!")
+        print("   Run: python quick_test.py")
+    
+    print("\n📡 Starting Flask server...")
+    print("   URL: http://localhost:5000")
+    print("   Health: http://localhost:5000/api/health")
+    print("   Results: http://localhost:5000/api/results")
+    
+    if has_results:
+        print("\n✅ Ready! Results load instantly (no training needed)")
+    
+    print("\n🔧 UPDATES IN THIS VERSION:")
+    print("   ✨ Fixed: Beat type selection now works correctly")
+    print("   ✨ Normal → generates N beats")
+    print("   ✨ Ventricular → generates V beats")
+    print("   ✨ Supraventricular → generates S beats")
+    
+    print("="*70 + "\n")
+    
+    app.run(debug=True, port=5000, host='0.0.0.0')

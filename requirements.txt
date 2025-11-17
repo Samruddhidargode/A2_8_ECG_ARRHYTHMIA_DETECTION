@@ -1,0 +1,10 @@
+Flask
+flask-cors
+numpy
+scipy
+scikit-learn
+matplotlib
+wfdb
+joblib
+pandas
+requests

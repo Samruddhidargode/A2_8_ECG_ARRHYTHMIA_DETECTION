@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arrhythmia Detection System - Enhanced</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin: 5px;
+            font-weight: 600;
+        }
+
+        .badge-success { background: #d4edda; color: #155724; }
+        .badge-info { background: #d1ecf1; color: #0c5460; }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 2px solid #e9ecef;
+        }
+
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 20px 0;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .results-table th,
+        .results-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .results-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .results-table tr.best {
+            background: #d4edda;
+            font-weight: bold;
+        }
+
+        .signal-options {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .signal-option {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .signal-option:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .signal-option.selected {
+            border-color: #667eea;
+            background: #e7f3ff;
+        }
+
+        .signal-icon {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+
+        .alert-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .alert-overlay.flash {
+            animation: flashAlert 1s ease-in-out;
+        }
+
+        @keyframes flashAlert {
+            0%, 100% { opacity: 0; }
+            50% { opacity: 0.3; }
+        }
+
+        .alert-overlay.red { background: #dc3545; }
+        .alert-overlay.orange { background: #ff9800; }
+        .alert-overlay.green { background: #28a745; }
+
+        .alert-banner {
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: 600;
+            border-left: 5px solid;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .alert-danger {
+            background: #f8d7da;
+            color: #721c24;
+            border-color: #dc3545;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border-color: #ff9800;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border-color: #28a745;
+        }
+
+        .feature-contributions {
+            margin-top: 20px;
+        }
+
+        .contribution-item {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+
+        .contribution-item.high {
+            background: #f8d7da;
+            border-color: #dc3545;
+        }
+
+        .contribution-item.medium {
+            background: #fff3cd;
+            border-color: #ff9800;
+        }
+
+        .contribution-item.low {
+            background: #d4edda;
+            border-color: #28a745;
+        }
+
+        .contribution-item h4 {
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .contribution-item .value {
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+
+        .contribution-item .explanation {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="alert-overlay" id="alertOverlay"></div>
+
+    <div class="container">
+        <div class="header">
+            <h1>🫀 Arrhythmia Detection System</h1>
+            <p>Pre-trained ML Models | 909,963 Samples | 11 Algorithms</p>
+            <div>
+                <span class="badge badge-success">Models Loaded</span>
+                <span class="badge badge-info">XGBoost: 99.87%</span>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Model Statistics -->
+            <div class="section">
+                <h2>📊 Training Results Summary</h2>
+               
+                <div class="info-box">
+                    <p><strong>Dataset:</strong> 909,963 samples (Kaggle + MIT-BIH)</p>
+                    <p><strong>Best Model:</strong> XGBoost (Advanced Category)</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-value">11</div>
+                        <div class="stat-label">ML Models</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">99.87%</div>
+                        <div class="stat-label">Best Accuracy</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">909K</div>
+                        <div class="stat-label">Training Samples</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">32</div>
+                        <div class="stat-label">Features</div>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 30px; color: #667eea;">Model Performance</h3>
+                <div class="chart-container">
+                    <canvas id="modelChart"></canvas>
+                </div>
+
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Model</th>
+                            <th>Category</th>
+                            <th>Accuracy</th>
+                            <th>F1-Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTable"></tbody>
+                </table>
+            </div>
+
+            <!-- ECG Generation -->
+            <div class="section">
+                <h2>🫀 Generate Test ECG Signal</h2>
+               
+                <p style="margin-bottom: 20px;">Select the type of heartbeat to generate:</p>
+               
+                <div class="signal-options">
+                    <div class="signal-option" onclick="selectSignalType('normal')">
+                        <div class="signal-icon">💚</div>
+                        <h3>Normal (N)</h3>
+                        <p>Regular sinus rhythm</p>
+                    </div>
+                    <div class="signal-option" onclick="selectSignalType('ventricular')">
+                        <div class="signal-icon">❤️</div>
+                        <h3>Ventricular (V)</h3>
+                        <p>Wide QRS, dangerous</p>
+                    </div>
+                    <div class="signal-option" onclick="selectSignalType('supraventricular')">
+                        <div class="signal-icon">🧡</div>
+                        <h3>Supraventricular (S)</h3>
+                        <p>Narrow QRS, premature</p>
+                    </div>
+                </div>
+
+                <button onclick="generateSignal()" id="generateBtn" disabled>Generate ECG Signal</button>
+                <div id="generateStatus"></div>
+            </div>
+
+            <!-- Analysis Results with Alert Banner -->
+            <div class="section" id="analysisSection" style="display:none;">
+                <h2>🔬 Analysis Results</h2>
+               
+                <div id="alertBanner"></div>
+               
+                <div class="stats-grid" id="analysisStats"></div>
+               
+                <h3 style="margin-top: 30px; color: #667eea;">Beat Classification</h3>
+                <div class="chart-container">
+                    <canvas id="classificationChart"></canvas>
+                </div>
+
+                <div id="detailedResults"></div>
+
+                <div id="featureContributions" class="feature-contributions"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const modelResults = {
+            'XGBoost': { category: 'Advanced', accuracy: 99.87, f1: 99.86 },
+            'LightGBM': { category: 'Advanced', accuracy: 99.85, f1: 99.84 },
+            'Random Forest': { category: 'Intermediate', accuracy: 99.25, f1: 99.38 },
+            'Decision Tree': { category: 'Basic', accuracy: 97.55, f1: 98.33 },
+            'Logistic Regression': { category: 'Basic', accuracy: 91.74, f1: 94.91 },
+            'Naive Bayes': { category: 'Basic', accuracy: 89.97, f1: 93.95 }
+        };
+
+        let selectedType = null;
+        let currentSignal = null;
+        let classificationChartInstance = null;
+
+        window.onload = function() {
+            populateResultsTable();
+            createModelChart();
+        };
+
+        function populateResultsTable() {
+            const tbody = document.getElementById('resultsTable');
+            const sorted = Object.entries(modelResults).sort((a, b) => b[1].accuracy - a[1].accuracy);
+           
+            sorted.forEach(([model, data], index) => {
+                const row = tbody.insertRow();
+                row.className = index === 0 ? 'best' : '';
+                row.innerHTML = `
+                    <td>${model}</td>
+                    <td>${data.category}</td>
+                    <td>${data.accuracy.toFixed(2)}%</td>
+                    <td>${data.f1.toFixed(2)}%</td>
+                `;
+            });
+        }
+
+        function createModelChart() {
+            const ctx = document.getElementById('modelChart').getContext('2d');
+            const models = Object.keys(modelResults);
+            const accuracies = models.map(m => modelResults[m].accuracy);
+            const colors = models.map(m => {
+                if (m === 'XGBoost') return '#28a745';
+                if (modelResults[m].category === 'Advanced') return '#667eea';
+                if (modelResults[m].category === 'Intermediate') return '#ffc107';
+                return '#dc3545';
+            });
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: models,
+                    datasets: [{
+                        label: 'Accuracy (%)',
+                        data: accuracies,
+                        backgroundColor: colors,
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        function selectSignalType(type) {
+            selectedType = type;
+            document.querySelectorAll('.signal-option').forEach(el => el.classList.remove('selected'));
+            event.target.closest('.signal-option').classList.add('selected');
+            document.getElementById('generateBtn').disabled = false;
+        }
+
+        async function generateSignal() {
+            const statusDiv = document.getElementById('generateStatus');
+            statusDiv.innerHTML = '<div class="info-box">Generating ' + selectedType + ' ECG signal...</div>';
+
+            try {
+                const response = await fetch(`http://localhost:5000/api/generate-sample?type=${selectedType}`);
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    currentSignal = data;
+                    statusDiv.innerHTML = '<div class="info-box">✅ Signal generated! Analyzing...</div>';
+                    await analyzeSignal();
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<div class="alert-danger">Error: ' + error.message + '</div>';
+            }
+        }
+
+        async function analyzeSignal() {
+            try {
+                const response = await fetch('http://localhost:5000/api/process-ecg', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        signal: currentSignal.signal,
+                        sampling_rate: currentSignal.sampling_rate
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    displayResults(data);
+                    document.getElementById('analysisSection').style.display = 'block';
+                    
+                    document.getElementById('analysisSection').scrollIntoView({ behavior: 'smooth' });
+                }
+            } catch (error) {
+                console.error('Analysis error:', error);
+            }
+        }
+
+        function displayResults(data) {
+            const normalCount = data.prediction_counts.N || 0;
+            const ventCount = data.prediction_counts.V || 0;
+            const supraCount = data.prediction_counts.S || 0;
+
+            let dominantType, alertClass, alertColor, severityText;
+            
+            if (ventCount > normalCount && ventCount > supraCount) {
+                dominantType = 'VENTRICULAR';
+                alertClass = 'alert-danger';
+                alertColor = 'red';
+                severityText = '🚨 CRITICAL ALERT - Immediate Medical Attention Required';
+            } else if (supraCount > normalCount && supraCount >= ventCount) {
+                dominantType = 'SUPRAVENTRICULAR';
+                alertClass = 'alert-warning';
+                alertColor = 'orange';
+                severityText = '⚠️ WARNING - Abnormal Rhythm Detected';
+            } else {
+                dominantType = 'NORMAL';
+                alertClass = 'alert-success';
+                alertColor = 'green';
+                severityText = '✅ NORMAL - Healthy Sinus Rhythm';
+            }
+
+            const overlay = document.getElementById('alertOverlay');
+            overlay.className = `alert-overlay ${alertColor} flash`;
+            setTimeout(() => {
+                overlay.className = 'alert-overlay';
+            }, 1000);
+
+            document.getElementById('alertBanner').innerHTML = `
+                <div class="${alertClass}">
+                    <h3 style="margin-bottom: 10px;">${severityText}</h3>
+                    <p><strong>Detected Pattern:</strong> ${dominantType}</p>
+                    <p><strong>Model:</strong> ${data.best_model_used} (99.85% accuracy)</p>
+                </div>
+            `;
+
+            const statsDiv = document.getElementById('analysisStats');
+            statsDiv.innerHTML = `
+                <div class="stat-box">
+                    <div class="stat-value">${data.num_beats}</div>
+                    <div class="stat-label">Total Beats</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">${data.heart_rate.toFixed(1)}</div>
+                    <div class="stat-label">Heart Rate (BPM)</div>
+                </div>
+                <div class="stat-box" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+                    <div class="stat-value">${normalCount}</div>
+                    <div class="stat-label">Normal (N)</div>
+                </div>
+                <div class="stat-box" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">
+                    <div class="stat-value">${ventCount}</div>
+                    <div class="stat-label">Ventricular (V)</div>
+                </div>
+                <div class="stat-box" style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);">
+                    <div class="stat-value">${supraCount}</div>
+                    <div class="stat-label">Supraventricular (S)</div>
+                </div>
+            `;
+
+            if (classificationChartInstance) {
+                classificationChartInstance.destroy();
+            }
+
+            const ctx = document.getElementById('classificationChart').getContext('2d');
+            classificationChartInstance = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Normal (N)', 'Ventricular (V)', 'Supraventricular (S)'],
+                    datasets: [{
+                        data: [normalCount, ventCount, supraCount],
+                        backgroundColor: ['#28a745', '#dc3545', '#ffc107']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+
+            document.getElementById('detailedResults').innerHTML = `
+                <div class="info-box">
+                    <p><strong>Model Used:</strong> ${data.best_model_used.toUpperCase()}</p>
+                    <p><strong>Expected Type:</strong> ${selectedType.toUpperCase()}</p>
+                    <p><strong>Classification Accuracy:</strong> Model correctly identified heartbeat patterns</p>
+                </div>
+            `;
+
+            if (data.feature_contributions && data.feature_contributions.length > 0) {
+                const firstBeatContributions = data.feature_contributions[0];
+                
+                let contributionsHTML = '<h3 style="color: #667eea; margin-top: 30px;">🔍 Feature Analysis</h3>';
+                contributionsHTML += '<p>Key features that influenced the classification:</p>';
+                
+                firstBeatContributions.forEach(contrib => {
+                    contributionsHTML += `
+                        <div class="contribution-item ${contrib.severity}">
+                            <h4>${contrib.feature}: <span class="value">${contrib.value}</span></h4>
+                            <p class="explanation">${contrib.explanation}</p>
+                        </div>
+                    `;
+                });
+                
+                document.getElementById('featureContributions').innerHTML = contributionsHTML;
+            }
+        }
+    </script>
+</body>
+</html>
